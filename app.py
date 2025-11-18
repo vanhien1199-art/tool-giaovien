@@ -97,7 +97,7 @@ def main():
         }
         
         genai.configure(api_key=API_KEY)
-        model = genai.GenerativeModel('gemini-pro', safety_settings=safety_settings)
+        model = genai.GenerativeModel('gemini-2.5-flash-image', safety_settings=safety_settings)
     except Exception as e:
         st.error(f"Lỗi kết nối AI: {e}")
         return
@@ -368,4 +368,5 @@ QUY TẮC ĐIỀN DỮ LIỆU:
     """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
+
     main()
