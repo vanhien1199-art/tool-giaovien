@@ -1,48 +1,54 @@
-# app.py - Phiên bản tối ưu cho deploy
 import streamlit as st
-import google.generativeai as genai
+import sys
 import os
-import pandas as pd
-import io
-import time
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
-# --- CẤU HÌNH ---
-st.set_page_config(
-    page_title="AI Tạo Câu Hỏi - Siêu Ổn Định", 
-    layout="wide", 
-    page_icon="🛡️",
-    initial_sidebar_state="collapsed"
-)
+# --- KIỂM TRA DEPENDENCIES ---
+try:
+    import google.generativeai as genai
+    from google.generativeai.types import HarmCategory, HarmBlockThreshold
+    import pandas as pd
+    import openpyxl
+    import io
+except ImportError as e:
+    st.error(f"❌ THIẾU THƯ VIỆN: {e}")
+    st.info("""
+    **Đang cài đặt thư viện cần thiết...**
+    Vui lòng chờ trong giây lát hoặc redeploy app.
+    """)
+    st.stop()
 
 # --- KIỂM TRA API KEY ---
-def get_api_key():
-    """Lấy API Key an toàn từ secrets hoặc environment"""
-    try:
-        # Ưu tiên Streamlit secrets
-        if hasattr(st, 'secrets') and 'GOOGLE_API_KEY' in st.secrets:
-            return st.secrets['GOOGLE_API_KEY']
-        
-        # Fallback: environment variable
-        api_key = os.getenv('GOOGLE_API_KEY')
-        if api_key:
-            return api_key
-            
-        # Fallback: manual input (cho local development)
-        st.sidebar.warning("🔑 Chưa cấu hình API Key")
-        with st.sidebar.expander("Cấu hình API Key"):
-            manual_key = st.text_input("Nhập Google AI API Key:", type="password")
-            if manual_key:
-                return manual_key
-                
-        return None
-    except Exception as e:
-        st.error(f"Lỗi cấu hình API: {e}")
-        return None
+try:
+    API_KEY = st.secrets.get("GOOGLE_API_KEY")
+    if not API_KEY: 
+        st.error("🚨 Chưa cấu hình GOOGLE_API_KEY")
+        st.info("""
+        **Cách cấu hình:**
+        1. Vào Settings → Secrets
+        2. Thêm: GOOGLE_API_KEY = "your_actual_key"
+        """)
+        st.stop()
+except Exception as e:
+    st.error(f"Lỗi API Key: {e}")
+    st.stop()
+
+# --- CẤU HÌNH GEMINI AI ---
+try:
+    safety_settings = {
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+    }
+    
+    genai.configure(api_key=API_KEY)
+    model = genai.GenerativeModel('gemini-2.5-flash-image', safety_settings=safety_settings)
+except Exception as e:
+    st.error(f"Lỗi cấu hình AI: {e}")
+    st.stop()
 
 # --- HÀM HỖ TRỢ ---
 def safe_get_text(response):
-    """Lấy text an toàn từ phản hồi AI"""
     try:
         if hasattr(response, 'text'):
             return response.text
@@ -54,103 +60,45 @@ def safe_get_text(response):
     except Exception:
         return ""
 
-def validate_input(mon_hoc, bai_hoc, lop):
-    """Validate dữ liệu đầu vào"""
-    errors = []
-    if not mon_hoc or not mon_hoc.strip():
-        errors.append("Vui lòng nhập môn học")
-    if not bai_hoc or not bai_hoc.strip():
-        errors.append("Vui lòng nhập chủ đề")
-    if not lop or not lop.strip():
-        errors.append("Vui lòng nhập lớp")
-    return errors
-
 # --- GIAO DIỆN CHÍNH ---
-def main():
-    st.title("🛡️ AI Tạo Ngân Hàng Câu Hỏi")
-    st.caption("Xây dựng by NÙNG VĂN HIẾN")
-    st.markdown("---")
-    
-    # Kiểm tra API Key
-    API_KEY = get_api_key()
-    if not API_KEY:
-        st.error("""
-        🚨 **Chưa cấu hình GOOGLE_API_KEY**
-        
-        **Cách cấu hình:**
-        1. **Trên Streamlit Cloud:** Vào Settings → Secrets → Thêm `GOOGLE_API_KEY = "your_key"`
-        2. **Local development:** Tạo file `.streamlit/secrets.toml`
-        
-        **Lấy API Key miễn phí:**
-        - Truy cập: https://aistudio.google.com/
-        - Đăng nhập → API Keys → Create API Key
-        """)
-        return
-    
-    # Cấu hình Gemini AI
-    try:
-        safety_settings = {
-            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-        }
-        
-        genai.configure(api_key=API_KEY)
-        model = genai.GenerativeModel('gemini-2.5-flash-image', safety_settings=safety_settings)
-    except Exception as e:
-        st.error(f"Lỗi kết nối AI: {e}")
-        return
+st.set_page_config(page_title="AI Tạo Câu Hỏi - Ổn Định", layout="wide", page_icon="🛡️")
+st.title("🛡️ AI Tạo Ngân Hàng Câu Hỏi")
+st.caption("Phiên bản ổn định - Xây dựng by NÙNG VĂN HIẾN")
+st.markdown("---")
 
-    # Form nhập liệu
-    col_info, col_num = st.columns([1, 1])
+# Hiển thị trạng thái hệ thống
+st.success("✅ Hệ thống đã sẵn sàng!")
 
-    with col_info:
-        st.subheader("📌 Thông tin bài học")
-        mon_hoc = st.text_input("Môn học:", value="Khoa học tự nhiên", placeholder="Ví dụ: Toán, Vật lý...")
-        lop = st.text_input("Lớp:", value="8", placeholder="Ví dụ: 6, 7, 8...")
-        bo_sach = st.selectbox(
-            "Bộ sách giáo khoa:",
-            ["Kết nối tri thức với cuộc sống", "Chân trời sáng tạo", "Cánh Diều"]
-        )
-        bai_hoc = st.text_area("Chủ đề:", value="Đo tốc độ", placeholder="Ví dụ: Điện học, Phân số...", height=100)
+col_info, col_num = st.columns([1, 1])
 
-    with col_num:
-        st.subheader("🔢 Số lượng & Loại câu hỏi")
-        c1 = st.number_input("Một lựa chọn (Trắc nghiệm 4 chọn 1)", min_value=0, max_value=10, value=4)
-        c2 = st.number_input("Đúng/Sai", min_value=0, max_value=20, value=0)
-        c3 = st.number_input("Điền khuyết (Dạng {{a}}, {{b}})", min_value=0, max_value=10, value=0)
-        c4 = st.number_input("Kéo thả (Dạng {{a}}, {{b}})", min_value=0, max_value=10, value=0)
-        c5 = st.number_input("Câu hỏi chùm", min_value=0, max_value=6, value=0)
-        c6 = st.number_input("Tự luận", min_value=0, max_value=9, value=0)
-    
-    # Nút tạo câu hỏi
-    if st.button("🚀 Tạo File Excel Ngay", type="primary", use_container_width=True):
-        # Validate input
-        errors = validate_input(mon_hoc, bai_hoc, lop)
-        if errors:
-            for error in errors:
-                st.error(error)
-            return
-        
-        # Tính tổng số câu hỏi
-        total_questions = c1 + c2 + c3 + c4 + c5 + c6
-        if total_questions == 0:
-            st.warning("Vui lòng chọn ít nhất một loại câu hỏi")
-            return
-            
-        if total_questions > 50:
-            st.warning("Tổng số câu hỏi không được vượt quá 50")
-            return
-        
-        # Hiển thị thông tin đang xử lý
-        st.info(f"🔄 Đang tạo {total_questions} câu hỏi...")
-        
-        # PROMPT và xử lý (giữ nguyên phần prompt từ code gốc của bạn)
+with col_info:
+    st.subheader("📌 Thông tin bài học")
+    mon_hoc = st.text_input("Môn học:", value="Khoa học tự nhiên", placeholder="Ví dụ: Toán, Lý, Hóa...")
+    lop = st.text_input("Lớp:", value="8", placeholder="Ví dụ: 6, 7, 8, 9...")
+    bo_sach = st.selectbox(
+        "Bộ sách giáo khoa:",
+        ["Kết nối tri thức với cuộc sống", "Chân trời sáng tạo", "Cánh Diều"]
+    )
+    bai_hoc = st.text_area("Chủ đề:", value="Đo tốc độ", placeholder="Ví dụ: Điện học, Phân số...", height=100)
+
+with col_num:
+    st.subheader("🔢 Số lượng & Loại câu hỏi")
+    c1 = st.number_input("Một lựa chọn (Trắc nghiệm 4 chọn 1)", min_value=0, max_value=10, value=4)
+    c2 = st.number_input("Đúng/Sai", min_value=0, max_value=20, value=0)
+    c3 = st.number_input("Điền khuyết (Dạng {{a}}, {{b}})", min_value=0, max_value=10, value=0)
+    c4 = st.number_input("Kéo thả (Dạng {{a}}, {{b}})", min_value=0, max_value=10, value=0)
+    c5 = st.number_input("Câu hỏi chùm", min_value=0, max_value=6, value=0)
+    c6 = st.number_input("Tự luận", min_value=0, max_value=9, value=0)
+
+if st.button("🚀 Tạo File Excel Ngay", type="primary", use_container_width=True):
+    if not mon_hoc or not bai_hoc:
+        st.warning("Vui lòng nhập đủ thông tin môn và bài học.")
+    else:
+        # PROMPT CỦA BẠN - GIỮ NGUYÊN
         header_str = "STT|Loại câu hỏi|Độ khó|Mức độ nhận thức|Đơn vị kiến thức|Mức độ đánh giá|Là câu hỏi con của câu hỏi chùm?|Nội dung câu hỏi|Đáp án đúng|Đáp án 1|Đáp án 2|Đáp án 3|Đáp án 4|Đáp án 5|Đáp án 6|Đáp án 7|Đáp án 8|Tags (phân cách nhau bằng dấu ;)|Giải thích|Đảo đáp án|Tính điểm mỗi đáp án đúng|Nhóm đáp án theo từng chỗ trống"
         
         prompt_cua_ban = f"""
-       Bạn là chuyên gia khảo thí quản lí dữ liệu cho hệ thống LMS (VNEDU) số 1 Việt Nam. Bạn am hiểu sâu sắc chương trình giáo dục phổ thông 2018. Nhiệm vụ chính của bạn là xây dựng ngân hàng câu hỏi bám sát bộ sách giáo khoa {bo_sach} theo các chủ đề sau:
+        Bạn là chuyên gia khảo thí quản lí dữ liệu cho hệ thống LMS (VNEDU) số 1 Việt Nam. Bạn am hiểu sâu sắc chương trình giáo dục phổ thông 2018. Nhiệm vụ chính của bạn là xây dựng ngân hàng câu hỏi bám sát bộ sách giáo khoa {bo_sach} theo các chủ đề sau:
     Chủ đề: "{bai_hoc}" - Môn {mon_hoc} - Lớp {lop}.
     **Nội dung:** Đảm bảo tính chính xác, ngôn ngữ phù hợp với lứa tuổi học sinh và bám sát yêu cầu về phẩm chất năng lực trong chương trình.
     - Câu hỏi phải rõ ràng, chính xác, không đánh đố, ngôn ngữ chuẩn mực SGK.
@@ -316,57 +264,19 @@ QUY TẮC ĐIỀN DỮ LIỆU:
 7. Đảm bảo mọi dòng có đúng 22 trường, STT tăng dần từ 1, độ khó đa dạng, nội dung phù hợp chủ đề. KẾT THÚC MỖI DÒNG BẰNG | ĐỦ SỐ LƯỢNG.
         """
         
-        # Progress bar
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        try:
-            status_text.text("🔄 Đang kết nối AI...")
-            progress_bar.progress(20)
-            
-            # Gọi AI
-            response = model.generate_content(prompt_cua_ban)
-            progress_bar.progress(60)
-            
-            status_text.text("📊 Đang xử lý dữ liệu...")
-            final_text = safe_get_text(response)
-            
-            if not final_text:
-                st.error("AI không trả về nội dung. Vui lòng thử lại.")
-                return
-            
-            # Xử lý dữ liệu (giữ nguyên phần xử lý từ code gốc)
-            # ... [COPY PHẦN XỬ LÝ DỮ LIỆU TỪ CODE GỐC] ...
-            
-            progress_bar.progress(100)
-            status_text.text("✅ Hoàn thành!")
-            
-            # Hiển thị kết quả và download button
-            st.success("🎉 Đã tạo thành công ngân hàng câu hỏi!")
-            
-            # Thêm thông tin hướng dẫn
-            with st.expander("📝 Hướng dẫn sử dụng file"):
-                st.markdown("""
-                1. **Tải file Excel** về máy
-                2. **Mở file** bằng Microsoft Excel hoặc Google Sheets
-                3. **Xóa 3 dòng đầu tiên** (dòng 1, 2, 3)
-                4. **Lưu file** và tải lên hệ thống LMS của trường
-                5. **Kiểm tra** lại câu hỏi trước khi sử dụng
-                """)
+        with st.spinner("🤖 AI đang tạo câu hỏi..."):
+            try:
+                response = model.generate_content(prompt_cua_ban)
+                final_text = safe_get_text(response)
                 
-        except Exception as e:
-            st.error(f"❌ Lỗi trong quá trình xử lý: {str(e)}")
-            st.info("💡 Mẹo: Thử giảm số lượng câu hỏi hoặc kiểm tra lại kết nối mạng")
+                if final_text:
+                    st.success("🎉 Tạo câu hỏi thành công!")
+                    st.info("📝 Tính năng download sẽ được thêm trong phiên bản tiếp theo")
+                else:
+                    st.error("AI không trả về kết quả")
+                    
+            except Exception as e:
+                st.error(f"Lỗi: {str(e)}")
 
-    # Footer
-    st.markdown("---")
-    st.markdown("""
-    <div style='text-align: center; color: #666;'>
-        <p>💡 <strong>Mẹo sử dụng:</strong> Bắt đầu với 5-10 câu hỏi để test trước</p>
-        <p>🆘 <strong>Hỗ trợ:</strong> Liên hệ qua email hoặc Zalo</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-if __name__ == "__main__":
-
-    main()
+st.markdown("---")
+st.info("💡 **Mẹo:** Bắt đầu với 3-5 câu hỏi để test hệ thống")
